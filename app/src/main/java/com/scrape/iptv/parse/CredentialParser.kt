@@ -42,8 +42,44 @@ object CredentialParser {
         return firstHttpUrl.find(text)?.value?.let { sanitizeUrl(it) }
     }
 
-    /** First http(s) URL in text (any line); used to fetch a page or playlist the user pasted. */
-    fun findFirstHttpUrl(text: String): String? = extractFirstUrl(text)
+    /**
+     * URLs to try when downloading pasted text, highest priority first.
+     * Prefer playlist/API/live URLs so we do not hit the first random `http` link (images, etc.).
+     */
+    fun candidateFetchUrls(text: String): List<String> {
+        val raw = text.trim()
+        if (raw.isEmpty()) return emptyList()
+        val found = LinkedHashSet<String>()
+        firstHttpUrl.findAll(raw).forEach { m ->
+            found.add(sanitizeUrl(m.value))
+        }
+        if (found.isEmpty()) {
+            val firstLine = raw.lineSequence().map { it.trim() }.firstOrNull { it.isNotBlank() }
+            if (firstLine != null && firstLine.startsWith("http", ignoreCase = true)) {
+                found.add(sanitizeUrl(firstLine))
+            }
+        }
+        return found.sortedByDescending { fetchCandidateScore(it) }.toList()
+    }
+
+    private fun fetchCandidateScore(u: String): Int {
+        val l = u.lowercase()
+        var s = 0
+        if (l.contains(".m3u") || l.contains(".m3u8")) s += 120
+        if (l.contains("get.php")) s += 100
+        if (l.contains("player_api.php")) s += 95
+        if (l.contains("type=m3u")) s += 45
+        if (l.contains("/live/")) s += 70
+        if (l.contains("playlist")) s += 40
+        if (l.contains("download")) s += 30
+        if (l.contains("api")) s += 15
+        if (l.endsWith(".php") || l.contains(".php?")) s += 25
+        if (l.contains("stalker") || l.contains("portal")) s += 20
+        return s
+    }
+
+    /** Best URL to fetch first (same ordering as [candidateFetchUrls]). */
+    fun findFirstHttpUrl(text: String): String? = candidateFetchUrls(text).firstOrNull()
 
     fun parseHttpUrl(urlString: String): CredentialParseResult? {
         val normalized = if (urlString.startsWith("http", ignoreCase = true)) {

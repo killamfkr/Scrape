@@ -96,10 +96,32 @@ class IptvViewModel : ViewModel() {
     }
 
     private suspend fun fetchThenParse(raw: String): CredentialParseResult? {
-        val url = CredentialParser.findFirstHttpUrl(raw) ?: return null
-        val body = CredentialSourceFetcher.fetchAsString(url)
-        return CredentialParser.parseFromPlainText(body)
-            ?: CredentialParser.parseFromUserInput(body)
+        val candidates = CredentialParser.candidateFetchUrls(raw)
+        if (candidates.isEmpty()) return null
+        val downloadErrors = mutableListOf<String>()
+        var downloadedOk = false
+        for (url in candidates) {
+            val body = runCatching { CredentialSourceFetcher.fetchAsString(url) }
+                .onFailure { e ->
+                    downloadErrors.add("${e.message ?: e.toString()}")
+                }
+                .getOrNull() ?: continue
+            downloadedOk = true
+            CredentialParser.parseFromPlainText(body)?.let { return it }
+            CredentialParser.parseFromUserInput(body)?.let { return it }
+        }
+        if (!downloadedOk && downloadErrors.isNotEmpty()) {
+            throw IllegalStateException(
+                buildString {
+                    append("Could not download from ")
+                    append(candidates.size)
+                    append(" URL(s). ")
+                    append(downloadErrors.last())
+                    append(" If the link works in a browser, copy the page or M3U text here instead of the page URL.")
+                },
+            )
+        }
+        return null
     }
 
     fun connectAndLoadCategories() {
