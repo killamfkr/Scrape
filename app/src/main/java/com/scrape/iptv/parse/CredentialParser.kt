@@ -59,7 +59,49 @@ object CredentialParser {
                 found.add(sanitizeUrl(firstLine))
             }
         }
-        return found.sortedByDescending { fetchCandidateScore(it) }.toList()
+        return found
+            .asSequence()
+            .filterNot { isBarePanelRootUrl(it) }
+            .sortedByDescending { fetchCandidateScore(it) }
+            .toList()
+    }
+
+    /**
+     * True for `http://host:8080` or `http://host:8080/` — there is usually no document at `/`, so fetching it returns 404.
+     * These are not downloaded; use [parsePanelRootOnly] to fill the server field only.
+     */
+    fun isBarePanelRootUrl(url: String): Boolean {
+        return normalizeBarePanelBaseUrl(url) != null
+    }
+
+    /**
+     * If [raw] is a single non-empty line that is only `scheme://host[:port]` (no path, no query, no userinfo),
+     * returns that panel base for the "Panel base URL" field. Otherwise null.
+     */
+    fun parsePanelRootOnly(raw: String): String? {
+        val t = raw.trim()
+        if (t.isEmpty()) return null
+        val lines = t.lineSequence().map { it.trim() }.filter { it.isNotEmpty() }.toList()
+        if (lines.size != 1) return null
+        return normalizeBarePanelBaseUrl(lines[0])
+    }
+
+    /**
+     * Normalizes `http(s)://host[:port]` or `host:port` / `host` with empty path into `http(s)://host[:port]`.
+     */
+    fun normalizeBarePanelBaseUrl(input: String): String? {
+        val s = input.trim()
+        if (s.isEmpty()) return null
+        val withScheme = if (s.startsWith("http", ignoreCase = true)) s else "http://$s"
+        val uri = runCatching { URI(withScheme) }.getOrNull() ?: return null
+        if (uri.host.isNullOrBlank()) return null
+        if (uri.rawUserInfo != null) return null
+        if (!uri.rawQuery.isNullOrBlank()) return null
+        val path = (uri.path ?: "").trim('/')
+        if (path.isNotEmpty()) return null
+        val scheme = (uri.scheme ?: "http").lowercase()
+        val portPart = if (uri.port > 0) ":${uri.port}" else ""
+        return "$scheme://${uri.host}$portPart"
     }
 
     private fun fetchCandidateScore(u: String): Int {

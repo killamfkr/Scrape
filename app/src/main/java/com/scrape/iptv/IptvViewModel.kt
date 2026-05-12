@@ -57,10 +57,39 @@ class IptvViewModel : ViewModel() {
                     lastParseHint = null,
                 )
             }
-            val result = runCatching {
-                CredentialParser.parseFromUserInput(raw)
-                    ?: fetchThenParse(raw)
-            }.getOrElse { e ->
+            val parsed = CredentialParser.parseFromUserInput(raw)
+            if (parsed != null) {
+                _state.update {
+                    it.copy(
+                        isLoading = false,
+                        serverUrl = parsed.serverBaseUrl,
+                        username = parsed.username,
+                        password = parsed.password,
+                        lastParseHint = buildString {
+                            append("Filled fields")
+                            parsed.hint?.let { h -> append(" ($h)") }
+                            append(".")
+                        },
+                        errorMessage = null,
+                    )
+                }
+                return@launch
+            }
+
+            val panelRoot = CredentialParser.parsePanelRootOnly(raw)
+            if (panelRoot != null) {
+                _state.update {
+                    it.copy(
+                        isLoading = false,
+                        serverUrl = panelRoot,
+                        lastParseHint = "Panel address only (no playlist at the root URL). Enter username and password, or paste an M3U / portal link that includes them.",
+                        errorMessage = null,
+                    )
+                }
+                return@launch
+            }
+
+            val fetched = runCatching { fetchThenParse(raw) }.getOrElse { e ->
                 _state.update {
                     it.copy(
                         isLoading = false,
@@ -69,7 +98,7 @@ class IptvViewModel : ViewModel() {
                 }
                 return@launch
             }
-            if (result == null) {
+            if (fetched == null) {
                 _state.update {
                     it.copy(
                         isLoading = false,
@@ -81,12 +110,12 @@ class IptvViewModel : ViewModel() {
             _state.update {
                 it.copy(
                     isLoading = false,
-                    serverUrl = result.serverBaseUrl,
-                    username = result.username,
-                    password = result.password,
+                    serverUrl = fetched.serverBaseUrl,
+                    username = fetched.username,
+                    password = fetched.password,
                     lastParseHint = buildString {
                         append("Filled fields")
-                        result.hint?.let { h -> append(" ($h)") }
+                        fetched.hint?.let { h -> append(" ($h)") }
                         append(".")
                     },
                     errorMessage = null,
