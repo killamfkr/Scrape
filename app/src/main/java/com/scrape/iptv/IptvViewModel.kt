@@ -5,6 +5,9 @@ import androidx.lifecycle.viewModelScope
 import com.scrape.iptv.api.LiveCategory
 import com.scrape.iptv.api.LiveStream
 import com.scrape.iptv.api.XtreamApiFactory
+import com.scrape.iptv.parse.CredentialParser
+import com.scrape.iptv.parse.CredentialParseResult
+import com.scrape.iptv.parse.CredentialSourceFetcher
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -12,6 +15,7 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
 data class IptvUiState(
+    val sourceUrl: String = "",
     val serverUrl: String = "",
     val username: String = "",
     val password: String = "",
@@ -23,16 +27,80 @@ data class IptvUiState(
     val streams: List<LiveStream> = emptyList(),
     val selectedCategory: LiveCategory? = null,
     val connectedBaseUrl: String? = null,
+    val lastParseHint: String? = null,
 )
 
 class IptvViewModel : ViewModel() {
     private val _state = MutableStateFlow(IptvUiState())
     val state: StateFlow<IptvUiState> = _state.asStateFlow()
 
+    fun setSourceUrl(value: String) = _state.update { it.copy(sourceUrl = value, errorMessage = null) }
+
     fun setServerUrl(value: String) = _state.update { it.copy(serverUrl = value, errorMessage = null) }
     fun setUsername(value: String) = _state.update { it.copy(username = value, errorMessage = null) }
     fun setPassword(value: String) = _state.update { it.copy(password = value, errorMessage = null) }
     fun setStreamExtension(value: String) = _state.update { it.copy(streamExtension = value, errorMessage = null) }
+
+    fun fillCredentialsFromSourceUrl() {
+        val raw = _state.value.sourceUrl.trim()
+        if (raw.isEmpty()) {
+            _state.update {
+                it.copy(errorMessage = "Paste your source URL or playlist text first.")
+            }
+            return
+        }
+        viewModelScope.launch {
+            _state.update {
+                it.copy(
+                    isLoading = true,
+                    errorMessage = null,
+                    lastParseHint = null,
+                )
+            }
+            val result = runCatching {
+                CredentialParser.parseFromUserInput(raw)
+                    ?: fetchThenParse(raw)
+            }.getOrElse { e ->
+                _state.update {
+                    it.copy(
+                        isLoading = false,
+                        errorMessage = e.message ?: e.toString(),
+                    )
+                }
+                return@launch
+            }
+            if (result == null) {
+                _state.update {
+                    it.copy(
+                        isLoading = false,
+                        errorMessage = "Could not find a username and password in that URL or page.",
+                    )
+                }
+                return@launch
+            }
+            _state.update {
+                it.copy(
+                    isLoading = false,
+                    serverUrl = result.serverBaseUrl,
+                    username = result.username,
+                    password = result.password,
+                    lastParseHint = buildString {
+                        append("Filled fields")
+                        result.hint?.let { h -> append(" ($h)") }
+                        append(".")
+                    },
+                    errorMessage = null,
+                )
+            }
+        }
+    }
+
+    private suspend fun fetchThenParse(raw: String): CredentialParseResult? {
+        val url = CredentialParser.findFirstHttpUrl(raw) ?: return null
+        val body = CredentialSourceFetcher.fetchAsString(url)
+        return CredentialParser.parseFromPlainText(body)
+            ?: CredentialParser.parseFromUserInput(body)
+    }
 
     fun connectAndLoadCategories() {
         val server = _state.value.serverUrl.trim()
@@ -51,6 +119,7 @@ class IptvViewModel : ViewModel() {
                     streams = emptyList(),
                     selectedCategory = null,
                     accountSummary = null,
+                    lastParseHint = null,
                 )
             }
             runCatching {

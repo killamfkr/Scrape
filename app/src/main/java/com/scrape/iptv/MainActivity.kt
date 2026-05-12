@@ -106,6 +106,40 @@ fun IptvApp(vm: IptvViewModel = viewModel()) {
                 .padding(horizontal = 16.dp),
         ) {
             Spacer(Modifier.height(8.dp))
+            Text(
+                "Your link or playlist",
+                style = MaterialTheme.typography.titleSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Spacer(Modifier.height(4.dp))
+            OutlinedTextField(
+                value = state.sourceUrl,
+                onValueChange = vm::setSourceUrl,
+                label = { Text("Source URL or pasted M3U") },
+                placeholder = { Text("Paste here when you have it — can be left empty") },
+                modifier = Modifier.fillMaxWidth(),
+                minLines = 2,
+                maxLines = 6,
+            )
+            Spacer(Modifier.height(8.dp))
+            Button(
+                onClick = { vm.fillCredentialsFromSourceUrl() },
+                enabled = !state.isLoading,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Text("Fill server, username & password from source")
+            }
+            state.lastParseHint?.let { hint ->
+                Spacer(Modifier.height(6.dp))
+                Text(hint, color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.bodySmall)
+            }
+            Spacer(Modifier.height(16.dp))
+            Text(
+                "Panel login",
+                style = MaterialTheme.typography.titleSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Spacer(Modifier.height(4.dp))
             OutlinedTextField(
                 value = state.serverUrl,
                 onValueChange = vm::setServerUrl,
