@@ -236,10 +236,16 @@ fun IptvApp(vm: IptvViewModel = viewModel()) {
                 ) { _, stream ->
                     StreamRow(
                         stream = stream,
-                        url = vm.streamPlayUrl(stream),
+                        playUrl = vm.streamPlayUrl(stream),
+                        username = state.username,
+                        password = state.password,
+                        panelBase = state.connectedBaseUrl,
+                        categoryName = state.selectedCategory?.categoryName,
                         onCopy = { url ->
                             clipboard.setText(AnnotatedString(url))
-                            scope.launch { snackbar.showSnackbar("Copied stream URL") }
+                            scope.launch {
+                                snackbar.showSnackbar("Copied full playback URL (includes login)")
+                            }
                         },
                         onOpenExternal = { url ->
                             val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url)).apply {
@@ -262,32 +268,66 @@ fun IptvApp(vm: IptvViewModel = viewModel()) {
 @Composable
 private fun StreamRow(
     stream: LiveStream,
-    url: String?,
+    playUrl: String?,
+    username: String,
+    password: String,
+    panelBase: String?,
+    categoryName: String?,
     onCopy: (String) -> Unit,
     onOpenExternal: (String) -> Unit,
 ) {
+    val displayUrl = playUrl?.let { UrlRedaction.redactLiveCredentials(it, username, password) }
     Card(
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
     ) {
         Column(Modifier.padding(10.dp)) {
             Text(stream.name ?: "(no name)", style = MaterialTheme.typography.titleSmall)
-            url?.let { u ->
+            categoryName?.takeIf { it.isNotBlank() }?.let { cat ->
                 Text(
-                    u,
+                    "Category: $cat",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            panelBase?.takeIf { it.isNotBlank() }?.let { base ->
+                Text(
+                    "Panel: $base",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            stream.streamId?.takeIf { it.isNotBlank() }?.let { id ->
+                Text(
+                    "Stream id: $id",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            if (playUrl != null && displayUrl != null) {
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    displayUrl,
                     style = MaterialTheme.typography.bodySmall,
                     fontFamily = FontFamily.Monospace,
-                    maxLines = 4,
+                    maxLines = 5,
+                )
+                Text(
+                    "Copy and Open use the full URL (with login) so players can play the stream.",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                    IconButton(onClick = { onCopy(u) }) {
-                        Icon(Icons.Default.ContentCopy, contentDescription = "Copy URL")
+                    IconButton(onClick = { onCopy(playUrl) }) {
+                        Icon(Icons.Default.ContentCopy, contentDescription = "Copy full playback URL")
                     }
-                    IconButton(onClick = { onOpenExternal(u) }) {
+                    IconButton(onClick = { onOpenExternal(playUrl) }) {
                         Icon(Icons.Default.OpenInNew, contentDescription = "Open in player")
                     }
                 }
-            } ?: Text("Missing stream id", style = MaterialTheme.typography.bodySmall)
+            } else {
+                Text("Missing stream id", style = MaterialTheme.typography.bodySmall)
+            }
         }
     }
 }
